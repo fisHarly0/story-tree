@@ -101,6 +101,24 @@ input[type="file"]{display:none}
 .wt-choice-label{font-size:11px;color:#89b4fa;margin-top:2px}
 .wt-ending{text-align:center;padding:20px;color:#6c7086;font-size:14px}
 .wt-ending-title{font-size:18px;color:#cdd6f4;margin-bottom:8px;font-weight:600}
+#search-bar{display:none;position:absolute;top:8px;left:50%;transform:translateX(-50%);background:#181825;border:1px solid #45475a;border-radius:8px;padding:6px 10px;z-index:18;display:none;align-items:center;gap:6px;min-width:320px}
+#search-bar.show{display:flex}
+#search-bar input{flex:1;background:#313244;color:#cdd6f4;border:1px solid #45475a;border-radius:6px;padding:5px 8px;font-size:13px;outline:none}
+#search-bar input:focus{border-color:#89b4fa}
+#search-bar button{background:#313244;color:#cdd6f4;border:1px solid #45475a;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px}
+#search-bar button:hover{background:#45475a}
+#search-bar .s-info{font-size:11px;color:#6c7086;min-width:40px;text-align:center}
+#stats-panel{display:none;position:absolute;right:12px;top:12px;background:#181825;border:1px solid #313244;border-radius:10px;padding:16px;z-index:15;min-width:200px;max-width:260px}
+#stats-panel.show{display:block}
+#stats-panel h4{font-size:13px;margin-bottom:10px;color:#6c7086}
+.stat-row{display:flex;justify-content:space-between;padding:3px 0;font-size:12px;border-bottom:1px solid #313244}
+.stat-row:last-child{border:none}
+.stat-label{color:#6c7086}
+.stat-val{color:#cdd6f4;font-weight:600}
+.stat-section{margin-top:10px;padding-top:8px;border-top:1px solid #313244}
+.stat-section h5{font-size:11px;color:#585b70;margin-bottom:4px}
+.stat-bar{display:flex;height:6px;border-radius:3px;overflow:hidden;margin:6px 0;gap:1px}
+.stat-bar span{flex:none;height:100%;border-radius:2px}
 ::-webkit-scrollbar{width:6px}
 ::-webkit-scrollbar-track{background:#181825}
 ::-webkit-scrollbar-thumb{background:#45475a;border-radius:3px}
@@ -127,6 +145,7 @@ input[type="file"]{display:none}
     <div class="group">
       <button id="btn-walk">走读</button>
       <button id="btn-charfilter">角色</button>
+      <button id="btn-stats">统计</button>
     </div>
     <div class="sep"></div>
     <div class="group">
@@ -148,6 +167,14 @@ input[type="file"]{display:none}
         <div id="cf-list"></div>
         <span class="cf-clear" id="cf-clear">清除筛选</span>
       </div>
+      <div id="search-bar">
+        <input id="s-input" type="text" placeholder="搜索文本或角色...">
+        <span class="s-info" id="s-info"></span>
+        <button id="s-prev">&#9650;</button>
+        <button id="s-next">&#9660;</button>
+        <button id="s-close">x</button>
+      </div>
+      <div id="stats-panel"></div>
     </div>
     <aside id="panel">
       <div id="p-empty">
@@ -238,6 +265,8 @@ let isPan = false, panStart = {x:0,y:0}, panOrig = {x:0,y:0};
 let editingNode = null;
 let history = [], historyIdx = -1;
 let charFilter = new Set();
+let collapsed = new Set();
+let searchMatches = [], searchIdx = -1, searchTerm = '';
 
 const cvs = document.getElementById('canvas');
 let ctx = cvs.getContext('2d');
@@ -341,16 +370,51 @@ function updateUndoButtons() {
 document.getElementById('btn-undo').onclick = undo;
 document.getElementById('btn-redo').onclick = redo;
 
+// --- Collapse ---
+function getDescendants(nodeId) {
+  const desc = new Set();
+  const childMap = {};
+  nodes.forEach(n => childMap[n.id] = []);
+  edges.forEach(e => { if (childMap[e.from]) childMap[e.from].push(e.to); });
+  const q = [...(childMap[nodeId] || [])];
+  while (q.length) {
+    const id = q.shift();
+    if (desc.has(id)) continue;
+    desc.add(id);
+    (childMap[id] || []).forEach(c => q.push(c));
+  }
+  return desc;
+}
+function isHiddenByCollapse(nodeId) {
+  for (const cid of collapsed) {
+    if (cid === nodeId) continue;
+    if (getDescendants(cid).has(nodeId)) return true;
+  }
+  return false;
+}
+function countCollapsedChildren(nodeId) {
+  return getDescendants(nodeId).size;
+}
+function toggleCollapse(node) {
+  if (collapsed.has(node.id)) collapsed.delete(node.id);
+  else collapsed.add(node.id);
+  render();
+}
+
 // --- Character filter ---
 function isNodeVisible(node) {
+  if (isHiddenByCollapse(node.id)) return false;
   if (charFilter.size === 0) return true;
   return node.chars.some(c => charFilter.has(c));
 }
 function isEdgeVisible(edge) {
-  if (charFilter.size === 0) return true;
   const fn = nodes.find(n => n.id === edge.from);
   const tn = nodes.find(n => n.id === edge.to);
-  return (fn && isNodeVisible(fn)) || (tn && isNodeVisible(tn));
+  if (!fn || !tn) return false;
+  if (isHiddenByCollapse(tn.id)) return false;
+  if (collapsed.has(edge.from)) return false;
+  if (charFilter.size === 0) return true;
+  return isNodeVisible(fn) || isNodeVisible(tn);
 }
 function buildCharFilterList() {
   const counts = {};
@@ -400,9 +464,10 @@ function edgePoints(e) {
 function bezAt(t,p0,p1,p2,p3){const m=1-t;return m*m*m*p0+3*m*m*t*p1+3*m*t*t*p2+t*t*t*p3;}
 
 function drawEdge(e, forExport) {
+  if (!forExport && !isEdgeVisible(e)) return;
   const p = edgePoints(e);
   if (!p) return;
-  const dim = !forExport && !isEdgeVisible(e);
+  const dim = !forExport && charFilter.size > 0 && !isEdgeVisible(e);
   const sel = !forExport && e === selEdge;
   const prob = e.probability;
   const col = sel ? '#89b4fa' : probColor(prob);
@@ -439,8 +504,9 @@ function drawEdge(e, forExport) {
 }
 
 function drawNode(node, forExport) {
+  if (!forExport && isHiddenByCollapse(node.id)) return;
   const x = node.x-node.w/2, y = node.y-node.h/2;
-  const dim = !forExport && !isNodeVisible(node);
+  const dim = !forExport && charFilter.size > 0 && !node.chars.some(c => charFilter.has(c));
   const sel = !forExport && node === selNode;
   const isConn = !forExport && mode==='connect' && connFrom===node;
   const catCol = (CATS[node.cat]||CATS.daily).color;
@@ -477,6 +543,29 @@ function drawNode(node, forExport) {
       tx += tw+4;
     }
   }
+
+  if (!forExport && collapsed.has(node.id)) {
+    const cc = countCollapsedChildren(node.id);
+    if (cc > 0) {
+      const bx = node.x + node.w/2 - 8, by = node.y + node.h/2 - 8;
+      ctx.fillStyle = '#f9e2af';
+      ctx.beginPath(); ctx.arc(bx, by, 11, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#1e1e2e';
+      ctx.font = 'bold 10px "Segoe UI",sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('+'+cc, bx, by);
+    }
+  }
+
+  if (!forExport && searchMatches.length > 0 && searchMatches.includes(node.id)) {
+    const isCur = searchIdx >= 0 && searchMatches[searchIdx] === node.id;
+    ctx.strokeStyle = isCur ? '#f9e2af' : '#89b4fa';
+    ctx.lineWidth = isCur ? 3 : 2;
+    ctx.setLineDash([5,3]);
+    roundRect(x-3,y-3,node.w+6,node.h+6,10); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   ctx.globalAlpha = 1;
 }
 
@@ -671,6 +760,8 @@ function showCtxMenu(sx,sy,nd,ed,w){
   if(nd){
     add('编辑',()=>showInlineEdit(nd));
     add('删除节点',()=>{pushHistory();deleteNode(nd);select(null,null);save();render();});
+    const hasChildren = edges.some(e=>e.from===nd.id);
+    if(hasChildren) add(collapsed.has(nd.id)?'展开子树':'折叠子树',()=>{toggleCollapse(nd);});
     add('从这里连线',()=>{setMode('connect');connFrom=nd;render();});
   }else if(ed){add('删除连线',()=>{pushHistory();deleteEdge(ed);select(null,null);save();render();});}
   else{add('在此添加节点',()=>{pushHistory();const n=addNode(w.x,w.y,'');select(n,null);save();render();setTimeout(()=>showInlineEdit(n),50);});}
@@ -1013,6 +1104,137 @@ Consider:
 };
 
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+// --- Search ---
+function openSearch() {
+  document.getElementById('search-bar').classList.add('show');
+  const inp = document.getElementById('s-input');
+  inp.focus(); inp.select();
+}
+function closeSearch() {
+  document.getElementById('search-bar').classList.remove('show');
+  searchMatches = []; searchIdx = -1; searchTerm = '';
+  render();
+}
+function doSearch() {
+  const q = document.getElementById('s-input').value.trim().toLowerCase();
+  searchTerm = q;
+  if (!q) { searchMatches = []; searchIdx = -1; updateSearchInfo(); render(); return; }
+  searchMatches = nodes.filter(n =>
+    (n.text||'').toLowerCase().includes(q) || n.chars.some(c => c.toLowerCase().includes(q))
+  ).map(n => n.id);
+  searchIdx = searchMatches.length > 0 ? 0 : -1;
+  updateSearchInfo();
+  focusSearchMatch();
+  render();
+}
+function searchNav(dir) {
+  if (!searchMatches.length) return;
+  searchIdx = (searchIdx + dir + searchMatches.length) % searchMatches.length;
+  updateSearchInfo();
+  focusSearchMatch();
+  render();
+}
+function focusSearchMatch() {
+  if (searchIdx < 0 || !searchMatches.length) return;
+  const node = nodes.find(n => n.id === searchMatches[searchIdx]);
+  if (!node) return;
+  const cw = cvs.clientWidth, ch = cvs.clientHeight;
+  pan.x = cw/2 - node.x * zoom;
+  pan.y = ch/2 - node.y * zoom;
+}
+function updateSearchInfo() {
+  document.getElementById('s-info').textContent = searchMatches.length ? `${searchIdx+1}/${searchMatches.length}` : searchTerm ? '0' : '';
+}
+document.getElementById('s-input').oninput = doSearch;
+document.getElementById('s-input').onkeydown = function(e) {
+  if (e.key === 'Enter') { e.shiftKey ? searchNav(-1) : searchNav(1); e.preventDefault(); }
+  if (e.key === 'Escape') closeSearch();
+};
+document.getElementById('s-prev').onclick = () => searchNav(-1);
+document.getElementById('s-next').onclick = () => searchNav(1);
+document.getElementById('s-close').onclick = closeSearch;
+
+// --- Stats ---
+document.getElementById('btn-stats').onclick = () => {
+  const el = document.getElementById('stats-panel');
+  if (el.classList.contains('show')) { el.classList.remove('show'); return; }
+  el.classList.add('show');
+  renderStats();
+};
+function renderStats() {
+  const el = document.getElementById('stats-panel');
+  if (!nodes.length) { el.innerHTML = '<h4>统计</h4><div class="stat-row"><span class="stat-label">空画布</span></div>'; return; }
+
+  const childMap = {}, parentMap = {};
+  nodes.forEach(n => { childMap[n.id] = []; parentMap[n.id] = []; });
+  edges.forEach(e => { if(childMap[e.from]) childMap[e.from].push(e.to); if(parentMap[e.to]) parentMap[e.to].push(e.from); });
+
+  const roots = nodes.filter(n => parentMap[n.id].length === 0);
+  const leaves = nodes.filter(n => childMap[n.id].length === 0);
+  const orphans = nodes.filter(n => parentMap[n.id].length === 0 && childMap[n.id].length === 0);
+
+  let maxPath = 0;
+  function dfs(id, depth, visited) {
+    if (visited.has(id)) return;
+    visited.add(id);
+    maxPath = Math.max(maxPath, depth);
+    (childMap[id]||[]).forEach(c => dfs(c, depth+1, visited));
+    visited.delete(id);
+  }
+  roots.forEach(r => dfs(r.id, 1, new Set()));
+  if (maxPath === 0 && nodes.length) maxPath = 1;
+
+  const catCounts = {};
+  Object.keys(CATS).forEach(k => catCounts[k] = 0);
+  nodes.forEach(n => catCounts[n.cat||'daily']++);
+
+  const charCounts = {};
+  nodes.forEach(n => n.chars.forEach(c => charCounts[c] = (charCounts[c]||0)+1));
+  const topChars = Object.entries(charCounts).sort((a,b) => b[1]-a[1]).slice(0, 5);
+
+  const branchNodes = nodes.filter(n => childMap[n.id].length > 1);
+  const convergeNodes = nodes.filter(n => parentMap[n.id].length > 1);
+
+  let html = '<h4>统计</h4>';
+  html += `<div class="stat-row"><span class="stat-label">节点</span><span class="stat-val">${nodes.length}</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">连线</span><span class="stat-val">${edges.length}</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">起点</span><span class="stat-val">${roots.length}</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">终点</span><span class="stat-val">${leaves.length}</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">最长路线</span><span class="stat-val">${maxPath} 步</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">分支点</span><span class="stat-val">${branchNodes.length}</span></div>`;
+  html += `<div class="stat-row"><span class="stat-label">汇合点</span><span class="stat-val">${convergeNodes.length}</span></div>`;
+  if (orphans.length) html += `<div class="stat-row"><span class="stat-label">孤立节点</span><span class="stat-val" style="color:#f38ba8">${orphans.length}</span></div>`;
+
+  html += '<div class="stat-section"><h5>分类分布</h5><div class="stat-bar">';
+  const total = nodes.length;
+  Object.entries(CATS).forEach(([k,v]) => {
+    if (catCounts[k]) html += `<span style="background:${v.color};width:${catCounts[k]/total*100}%" title="${v.name}: ${catCounts[k]}"></span>`;
+  });
+  html += '</div>';
+  Object.entries(CATS).forEach(([k,v]) => {
+    if (catCounts[k]) html += `<div class="stat-row"><span class="stat-label">${v.name}</span><span class="stat-val">${catCounts[k]}</span></div>`;
+  });
+  html += '</div>';
+
+  if (topChars.length) {
+    html += '<div class="stat-section"><h5>角色 TOP 5</h5>';
+    topChars.forEach(([c,cnt]) => {
+      html += `<div class="stat-row"><span class="stat-label" style="color:${charColor(c)}">${escHtml(c)}</span><span class="stat-val">${cnt}</span></div>`;
+    });
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+// Ctrl+F for search (override keyboard handler)
+document.addEventListener('keydown', function searchKey(e) {
+  if ((e.ctrlKey||e.metaKey) && e.key === 'f') {
+    e.preventDefault();
+    openSearch();
+  }
+}, true);
 </script>
 </body>
 </html>
