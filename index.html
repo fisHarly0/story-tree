@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>故事树</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:"Segoe UI","Microsoft YaHei",sans-serif;overflow:hidden;height:100vh;background:#1e1e2e;color:#cdd6f4}
+#app{display:flex;flex-direction:column;height:100vh}
+#toolbar{height:44px;background:#181825;display:flex;align-items:center;padding:0 12px;gap:6px;border-bottom:1px solid #313244;flex-shrink:0}
+#toolbar .group{display:flex;gap:4px}
+#toolbar .sep{width:1px;height:24px;background:#313244;margin:0 6px}
+#toolbar button{background:#313244;color:#cdd6f4;border:1px solid #45475a;border-radius:6px;padding:5px 12px;cursor:pointer;font-size:13px;transition:all .15s}
+#toolbar button:hover{background:#45475a}
+#toolbar button.active{background:#89b4fa;color:#1e1e2e;border-color:#89b4fa}
+#toolbar .spacer{flex:1}
+#zoom-ind{font-size:12px;color:#6c7086;min-width:50px;text-align:right}
+#main{display:flex;flex:1;overflow:hidden}
+#canvas-wrap{flex:1;position:relative;background:#1e1e2e;overflow:hidden}
+canvas{display:block;width:100%;height:100%}
+#inline-edit{display:none;position:absolute;background:#313244;color:#cdd6f4;border:2px solid #89b4fa;border-radius:6px;padding:8px;font-size:14px;font-family:inherit;resize:none;outline:none;z-index:10;line-height:1.5}
+#panel{width:280px;background:#181825;border-left:1px solid #313244;padding:16px;overflow-y:auto;flex-shrink:0}
+#panel h3{font-size:15px;margin-bottom:12px;color:#cdd6f4;font-weight:600}
+#panel label{display:block;font-size:12px;color:#6c7086;margin:12px 0 4px;letter-spacing:.5px}
+#panel label:first-of-type{margin-top:0}
+#panel textarea,#panel input[type="text"],#panel input[type="number"]{width:100%;background:#313244;color:#cdd6f4;border:1px solid #45475a;border-radius:6px;padding:8px;font-size:13px;font-family:inherit;outline:none;resize:vertical}
+#panel textarea:focus,#panel input:focus{border-color:#89b4fa}
+#panel input[type="range"]{width:100%;accent-color:#89b4fa;margin:4px 0}
+.tag-list{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}
+.tag-item{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;font-size:12px;color:#1e1e2e;font-weight:500}
+.tag-item .tag-x{cursor:pointer;opacity:.6;font-size:14px;line-height:1}
+.tag-item .tag-x:hover{opacity:1}
+.tag-add{display:flex;gap:4px;margin-top:6px}
+.tag-add input{flex:1}
+.tag-add button{background:#89b4fa;color:#1e1e2e;border:none;border-radius:6px;padding:0 10px;cursor:pointer;font-size:16px;font-weight:700}
+.tag-add button:hover{background:#74c7ec}
+.btn-danger{width:100%;margin-top:16px;background:#45475a;color:#f38ba8;border:1px solid #f38ba8;border-radius:6px;padding:6px;cursor:pointer;font-size:13px}
+.btn-danger:hover{background:#f38ba8;color:#1e1e2e}
+.help-block{color:#6c7086;font-size:13px;line-height:1.8}
+.help-block kbd{background:#313244;padding:1px 6px;border-radius:4px;font-size:12px;border:1px solid #45475a}
+.prob-val{color:#89b4fa;font-weight:600;float:right}
+#ctx-menu{display:none;position:absolute;background:#313244;border:1px solid #45475a;border-radius:8px;padding:4px;z-index:20;min-width:140px}
+#ctx-menu .ctx-item{padding:6px 12px;cursor:pointer;border-radius:4px;font-size:13px}
+#ctx-menu .ctx-item:hover{background:#45475a}
+input[type="file"]{display:none}
+#modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:100;justify-content:center;align-items:center}
+#modal-overlay.show{display:flex}
+#modal{background:#1e1e2e;border:1px solid #45475a;border-radius:12px;padding:24px;width:420px;max-width:90vw}
+#modal h3{margin-bottom:16px}
+#modal label{display:block;font-size:12px;color:#6c7086;margin:10px 0 4px;letter-spacing:.5px}
+#modal input{width:100%;background:#313244;color:#cdd6f4;border:1px solid #45475a;border-radius:6px;padding:8px;font-size:13px;outline:none}
+#modal input:focus{border-color:#89b4fa}
+#modal .modal-btns{display:flex;gap:8px;margin-top:20px;justify-content:flex-end}
+#modal .modal-btns button{padding:6px 16px;border-radius:6px;border:1px solid #45475a;cursor:pointer;font-size:13px}
+#modal .btn-primary{background:#89b4fa;color:#1e1e2e;border-color:#89b4fa}
+#modal .btn-secondary{background:#313244;color:#cdd6f4}
+.btn-ai{width:100%;margin-top:8px;background:#cba6f7;color:#1e1e2e;border:none;border-radius:6px;padding:8px;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s}
+.btn-ai:hover{background:#b4befe}
+.btn-ai:disabled{opacity:.5;cursor:wait}
+#ai-results{margin-top:12px}
+#ai-results .ai-card{background:#313244;border:1px solid #45475a;border-radius:8px;padding:10px;margin-top:8px;cursor:pointer;transition:all .15s}
+#ai-results .ai-card:hover{border-color:#89b4fa;background:#3b3d52}
+#ai-results .ai-title{font-size:13px;color:#cdd6f4;font-weight:600;margin-bottom:4px}
+#ai-results .ai-meta{font-size:11px;color:#6c7086}
+#ai-results .ai-chars{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px}
+#ai-results .ai-chars span{font-size:10px;padding:1px 6px;border-radius:8px;color:#1e1e2e}
+.ai-status{font-size:12px;color:#6c7086;margin-top:8px;font-style:italic}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:#181825}
+::-webkit-scrollbar-thumb{background:#45475a;border-radius:3px}
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="toolbar">
+    <div class="group">
+      <button id="btn-select" class="active" title="V">选择</button>
+      <button id="btn-connect" title="C">连线</button>
+    </div>
+    <div class="sep"></div>
+    <div class="group">
+      <button id="btn-layout">自动排列</button>
+      <button id="btn-fit">适应视图</button>
+    </div>
+    <div class="sep"></div>
+    <div class="group">
+      <button id="btn-export">导出</button>
+      <button id="btn-import">导入</button>
+    </div>
+    <div class="spacer"></div>
+    <button id="btn-settings" title="API 设置">设置</button>
+    <span id="zoom-ind">100%</span>
+  </header>
+  <div id="main">
+    <div id="canvas-wrap">
+      <canvas id="canvas"></canvas>
+      <textarea id="inline-edit"></textarea>
+      <div id="ctx-menu"></div>
+    </div>
+    <aside id="panel">
+      <div id="p-empty">
+        <h3>故事树</h3>
+        <div class="help-block">
+          <p>双击空白处添加节点</p>
+          <p>选中节点后 <kbd>Shift</kbd>+点击另一节点连线</p>
+          <p>或按 <kbd>C</kbd> 进入连线模式</p>
+          <p>滚轮缩放，拖拽平移</p>
+          <p>双击节点编辑文本</p>
+          <p><kbd>Del</kbd> 删除选中项</p>
+        </div>
+      </div>
+      <div id="p-node" style="display:none">
+        <h3>节点</h3>
+        <label>情节描述</label>
+        <textarea id="nd-text" rows="4" placeholder="描述这个情节..."></textarea>
+        <label>角色标签</label>
+        <div class="tag-list" id="nd-tags"></div>
+        <div class="tag-add">
+          <input id="nd-char-in" type="text" placeholder="输入角色名...">
+          <button id="nd-char-add">+</button>
+        </div>
+        <button class="btn-ai" id="nd-ai">AI 生成分支</button>
+        <div id="ai-results"></div>
+        <button class="btn-danger" id="nd-del">删除节点</button>
+      </div>
+      <div id="p-edge" style="display:none">
+        <h3>连线</h3>
+        <label>概率 <span class="prob-val" id="ed-prob-v">50%</span></label>
+        <input type="range" id="ed-prob" min="0" max="100" value="50">
+        <label>标注</label>
+        <input type="text" id="ed-label" placeholder="描述这条路线...">
+        <button class="btn-danger" id="ed-del">删除连线</button>
+      </div>
+    </aside>
+  </div>
+</div>
+<input type="file" id="file-in" accept=".json">
+<div id="modal-overlay">
+  <div id="modal">
+    <h3>API 设置</h3>
+    <label>接口地址 (OpenAI 兼容)</label>
+    <input id="cfg-endpoint" type="text" placeholder="https://api.openai.com/v1">
+    <label>密钥</label>
+    <input id="cfg-key" type="password" placeholder="sk-...">
+    <label>模型</label>
+    <input id="cfg-model" type="text" placeholder="gpt-4o">
+    <div class="modal-btns">
+      <button class="btn-secondary" id="cfg-cancel">取消</button>
+      <button class="btn-primary" id="cfg-save">保存</button>
+    </div>
+  </div>
+</div>
+<script>
+const COLORS = ['#f38ba8','#fab387','#f9e2af','#a6e3a1','#94e2d5','#89b4fa','#cba6f7','#f5c2e7','#74c7ec','#b4befe','#eba0ac','#89dceb'];
+const MIN_W = 140, MAX_W = 280, PAD = 14, LINE_H = 20, TAG_H = 22, TAG_PAD = 8;
+
+let nodes = [], edges = [], nid = 1, eid = 1;
+let selNode = null, selEdge = null;
+let mode = 'select', connFrom = null;
+let pan = {x:0,y:0}, zoom = 1;
+let drag = null, dragOff = {x:0,y:0};
+let isPan = false, panStart = {x:0,y:0}, panOrig = {x:0,y:0};
+let editingNode = null;
+
+const cvs = document.getElementById('canvas');
+const ctx = cvs.getContext('2d');
+const wrap = document.getElementById('canvas-wrap');
+const inlineEdit = document.getElementById('inline-edit');
+const ctxMenu = document.getElementById('ctx-menu');
+
+function charColor(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  return COLORS[Math.abs(h) % COLORS.length];
+}
+
+function probColor(p) {
+  if (p >= 70) return '#a6e3a1';
+  if (p >= 30) return '#f9e2af';
+  return '#f38ba8';
+}
+
+function s2w(sx, sy) {
+  return { x: (sx - pan.x) / zoom, y: (sy - pan.y) / zoom };
+}
+
+function w2s(wx, wy) {
+  return { x: wx * zoom + pan.x, y: wy * zoom + pan.y };
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+}
+
+function wrapText(text, maxW) {
+  if (!text) return ['(空)'];
+  const lines = [];
+  for (const raw of text.split('\n')) {
+    if (!raw) { lines.push(''); continue; }
+    let line = '';
+    for (const ch of raw) {
+      const test = line + ch;
+      if (ctx.measureText(test).width > maxW && line) {
+        lines.push(line); line = ch;
+      } else line = test;
+    }
+    if (line) lines.push(line);
+  }
+  return lines.length ? lines : ['(空)'];
+}
+
+function measure(node) {
+  ctx.font = '14px "Segoe UI","Microsoft YaHei",sans-serif';
+  const maxCW = MAX_W - PAD * 2;
+  const lines = wrapText(node.text, maxCW);
+  const tw = Math.max(...lines.map(l => ctx.measureText(l).width));
+  let tagRowW = 0;
+  if (node.chars.length) {
+    ctx.font = '11px "Segoe UI",sans-serif';
+    tagRowW = node.chars.reduce((s, c) => s + ctx.measureText(c).width + 16, 0) + (node.chars.length - 1) * 4;
+  }
+  const cw = Math.max(tw, tagRowW, MIN_W - PAD * 2);
+  node.w = Math.min(cw + PAD * 2, MAX_W);
+  node.h = PAD + lines.length * LINE_H + (node.chars.length ? TAG_PAD + TAG_H : 0) + PAD;
+  node._lines = lines;
+}
+
+function measureAll() { nodes.forEach(n => measure(n)); }
+
+function drawGrid() {
+  const gs = 40;
+  const sx = Math.floor(-pan.x / zoom / gs) * gs;
+  const sy = Math.floor(-pan.y / zoom / gs) * gs;
+  const ex = sx + cvs.clientWidth / zoom + gs * 2;
+  const ey = sy + cvs.clientHeight / zoom + gs * 2;
+  ctx.strokeStyle = 'rgba(205,214,244,0.04)';
+  ctx.lineWidth = 1 / zoom;
+  ctx.beginPath();
+  for (let x = sx; x <= ex; x += gs) { ctx.moveTo(x, sy); ctx.lineTo(x, ey); }
+  for (let y = sy; y <= ey; y += gs) { ctx.moveTo(sx, y); ctx.lineTo(ex, y); }
+  ctx.stroke();
+}
+
+function edgePoints(e) {
+  const fn = nodes.find(n => n.id === e.from);
+  const tn = nodes.find(n => n.id === e.to);
+  if (!fn || !tn) return null;
+  const x1 = fn.x, y1 = fn.y + fn.h / 2;
+  const x2 = tn.x, y2 = tn.y - tn.h / 2;
+  const dy = Math.abs(y2 - y1);
+  const off = Math.max(50, dy * 0.45);
+  return { x1, y1, x2, y2, cx1: x1, cy1: y1 + off, cx2: x2, cy2: y2 - off };
+}
+
+function bezAt(t, p0, p1, p2, p3) {
+  const m = 1 - t;
+  return m*m*m*p0 + 3*m*m*t*p1 + 3*m*t*t*p2 + t*t*t*p3;
+}
+
+function drawEdge(e) {
+  const p = edgePoints(e);
+  if (!p) return;
+  const sel = e === selEdge;
+  const prob = e.probability;
+  const col = sel ? '#89b4fa' : probColor(prob);
+  const w = (sel ? 3 : 1.5 + prob / 100 * 1.5);
+
+  ctx.strokeStyle = col;
+  ctx.lineWidth = w;
+  ctx.beginPath();
+  ctx.moveTo(p.x1, p.y1);
+  ctx.bezierCurveTo(p.cx1, p.cy1, p.cx2, p.cy2, p.x2, p.y2);
+  ctx.stroke();
+
+  const angle = Math.atan2(p.y2 - p.cy2, p.x2 - p.cx2);
+  const as = 8;
+  ctx.fillStyle = col;
+  ctx.save();
+  ctx.translate(p.x2, p.y2);
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-as, -as / 2.5);
+  ctx.lineTo(-as, as / 2.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  const mt = 0.5;
+  const mx = bezAt(mt, p.x1, p.cx1, p.cx2, p.x2);
+  const my = bezAt(mt, p.y1, p.cy1, p.cy2, p.y2);
+
+  const labels = [];
+  if (prob >= 0) labels.push(prob + '%');
+  if (e.label) labels.push(e.label);
+  if (labels.length) {
+    const txt = labels.join(' ');
+    ctx.font = 'bold 11px "Segoe UI",sans-serif';
+    const tw = ctx.measureText(txt).width;
+    ctx.fillStyle = '#1e1e2e';
+    roundRect(mx - tw / 2 - 6, my - 9, tw + 12, 18, 4);
+    ctx.fill();
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = col;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(txt, mx, my);
+  }
+}
+
+function drawNode(node) {
+  const x = node.x - node.w / 2;
+  const y = node.y - node.h / 2;
+  const sel = node === selNode;
+  const isConn = mode === 'connect' && connFrom === node;
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.3)';
+  ctx.shadowBlur = sel ? 12 : 6;
+  ctx.shadowOffsetY = 2;
+
+  ctx.fillStyle = sel ? '#313244' : '#292a3a';
+  roundRect(x, y, node.w, node.h, 8);
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+
+  ctx.strokeStyle = isConn ? '#f9e2af' : sel ? '#89b4fa' : '#45475a';
+  ctx.lineWidth = sel || isConn ? 2 : 1;
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.fillStyle = '#cdd6f4';
+  ctx.font = '14px "Segoe UI","Microsoft YaHei",sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  const lines = node._lines || ['(空)'];
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], x + PAD, y + PAD + i * LINE_H);
+  }
+
+  if (node.chars.length) {
+    ctx.font = '11px "Segoe UI",sans-serif';
+    let tx = x + PAD;
+    const ty = y + PAD + lines.length * LINE_H + TAG_PAD;
+    for (const ch of node.chars) {
+      const tw = ctx.measureText(ch).width + 12;
+      const c = charColor(ch);
+      ctx.fillStyle = c;
+      roundRect(tx, ty, tw, TAG_H - 2, 10);
+      ctx.fill();
+      ctx.fillStyle = '#1e1e2e';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ch, tx + 6, ty + TAG_H / 2 - 1);
+      tx += tw + 4;
+    }
+  }
+}
+
+function render() {
+  const dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cvs.width, cvs.height);
+
+  ctx.save();
+  ctx.translate(pan.x, pan.y);
+  ctx.scale(zoom, zoom);
+
+  drawGrid();
+  edges.forEach(e => drawEdge(e));
+  nodes.forEach(n => drawNode(n));
+
+  if (mode === 'connect' && connFrom && drag) {
+    const w = s2w(drag.x, drag.y);
+    ctx.strokeStyle = 'rgba(137,180,250,0.5)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(connFrom.x, connFrom.y + connFrom.h / 2);
+    ctx.lineTo(w.x, w.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  ctx.restore();
+}
+
+function nodeAt(wx, wy) {
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const n = nodes[i];
+    if (wx >= n.x - n.w/2 && wx <= n.x + n.w/2 && wy >= n.y - n.h/2 && wy <= n.y + n.h/2) return n;
+  }
+  return null;
+}
+
+function edgeAt(wx, wy) {
+  let best = null, bestD = 12;
+  for (const e of edges) {
+    const p = edgePoints(e);
+    if (!p) continue;
+    for (let t = 0; t <= 1; t += 0.03) {
+      const bx = bezAt(t, p.x1, p.cx1, p.cx2, p.x2);
+      const by = bezAt(t, p.y1, p.cy1, p.cy2, p.y2);
+      const d = Math.hypot(wx - bx, wy - by);
+      if (d < bestD) { bestD = d; best = e; }
+    }
+  }
+  return best;
+}
+
+function addNode(wx, wy, text) {
+  const n = { id: nid++, text: text || '', chars: [], x: wx, y: wy, w: MIN_W, h: 60, _lines: null };
+  measure(n);
+  nodes.push(n);
+  return n;
+}
+
+function addEdge(fromId, toId) {
+  if (fromId === toId) return null;
+  if (edges.find(e => e.from === fromId && e.to === toId)) return null;
+  const e = { id: eid++, from: fromId, to: toId, probability: 50, label: '' };
+  edges.push(e);
+  return e;
+}
+
+function deleteNode(node) {
+  edges = edges.filter(e => e.from !== node.id && e.to !== node.id);
+  nodes = nodes.filter(n => n !== node);
+  if (selNode === node) selNode = null;
+}
+
+function deleteEdge(edge) {
+  edges = edges.filter(e => e !== edge);
+  if (selEdge === edge) selEdge = null;
+}
+
+function select(node, edge) {
+  selNode = node; selEdge = edge;
+  updatePanel();
+  render();
+}
+
+// --- Panel ---
+const pEmpty = document.getElementById('p-empty');
+const pNode = document.getElementById('p-node');
+const pEdge = document.getElementById('p-edge');
+
+function updatePanel() {
+  pEmpty.style.display = !selNode && !selEdge ? '' : 'none';
+  pNode.style.display = selNode ? '' : 'none';
+  pEdge.style.display = selEdge ? '' : 'none';
+
+  if (selNode) {
+    document.getElementById('nd-text').value = selNode.text;
+    renderTags();
+  }
+  if (selEdge) {
+    document.getElementById('ed-prob').value = selEdge.probability;
+    document.getElementById('ed-prob-v').textContent = selEdge.probability + '%';
+    document.getElementById('ed-label').value = selEdge.label || '';
+  }
+}
+
+function renderTags() {
+  const el = document.getElementById('nd-tags');
+  el.innerHTML = '';
+  if (!selNode) return;
+  selNode.chars.forEach((ch, i) => {
+    const tag = document.createElement('span');
+    tag.className = 'tag-item';
+    tag.style.background = charColor(ch);
+    tag.innerHTML = ch + ' <span class="tag-x" data-i="' + i + '">x</span>';
+    el.appendChild(tag);
+  });
+  el.querySelectorAll('.tag-x').forEach(x => {
+    x.onclick = () => {
+      selNode.chars.splice(+x.dataset.i, 1);
+      measure(selNode);
+      renderTags();
+      save(); render();
+    };
+  });
+}
+
+document.getElementById('nd-text').oninput = function() {
+  if (!selNode) return;
+  selNode.text = this.value;
+  measure(selNode);
+  save(); render();
+};
+
+document.getElementById('nd-char-add').onclick = addCharTag;
+document.getElementById('nd-char-in').onkeydown = function(e) { if (e.key === 'Enter') addCharTag(); };
+function addCharTag() {
+  const inp = document.getElementById('nd-char-in');
+  const v = inp.value.trim();
+  if (!v || !selNode) return;
+  if (!selNode.chars.includes(v)) selNode.chars.push(v);
+  inp.value = '';
+  measure(selNode);
+  renderTags(); save(); render();
+}
+
+document.getElementById('nd-del').onclick = () => { if (selNode) { deleteNode(selNode); select(null, null); save(); render(); } };
+
+document.getElementById('ed-prob').oninput = function() {
+  if (!selEdge) return;
+  selEdge.probability = +this.value;
+  document.getElementById('ed-prob-v').textContent = this.value + '%';
+  save(); render();
+};
+document.getElementById('ed-label').oninput = function() {
+  if (!selEdge) return;
+  selEdge.label = this.value;
+  save(); render();
+};
+document.getElementById('ed-del').onclick = () => { if (selEdge) { deleteEdge(selEdge); select(null, null); save(); render(); } };
+
+// --- Mode ---
+function setMode(m) {
+  mode = m; connFrom = null;
+  document.getElementById('btn-select').classList.toggle('active', m === 'select');
+  document.getElementById('btn-connect').classList.toggle('active', m === 'connect');
+  wrap.style.cursor = m === 'connect' ? 'crosshair' : 'default';
+  render();
+}
+document.getElementById('btn-select').onclick = () => setMode('select');
+document.getElementById('btn-connect').onclick = () => setMode('connect');
+
+// --- Canvas Events ---
+function canvasXY(e) {
+  const r = cvs.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+let lastClick = 0, lastClickPos = {x:0,y:0};
+
+cvs.addEventListener('mousedown', e => {
+  if (e.button === 1) { e.preventDefault(); isPan = true; panStart = canvasXY(e); panOrig = {...pan}; wrap.style.cursor = 'grabbing'; return; }
+  if (e.button !== 0) return;
+  hideCtxMenu();
+  const {x: sx, y: sy} = canvasXY(e);
+  const w = s2w(sx, sy);
+  const nd = nodeAt(w.x, w.y);
+
+  if (mode === 'connect') {
+    if (nd) {
+      if (!connFrom) { connFrom = nd; render(); }
+      else {
+        const ne = addEdge(connFrom.id, nd.id);
+        if (ne) { select(null, ne); }
+        connFrom = null;
+        save(); render();
+      }
+    } else {
+      connFrom = null;
+      drag = {x: sx, y: sy};
+      render();
+    }
+    return;
+  }
+
+  if (nd) {
+    if (e.shiftKey && selNode && selNode !== nd) {
+      const ne = addEdge(selNode.id, nd.id);
+      if (ne) select(null, ne); else select(nd, null);
+      save(); render();
+      return;
+    }
+    select(nd, null);
+    drag = nd;
+    dragOff = { x: w.x - nd.x, y: w.y - nd.y };
+  } else {
+    const ed = edgeAt(w.x, w.y);
+    if (ed) { select(null, ed); return; }
+    select(null, null);
+    isPan = true;
+    panStart = {x: sx, y: sy};
+    panOrig = {...pan};
+    wrap.style.cursor = 'grabbing';
+  }
+});
+
+cvs.addEventListener('mousemove', e => {
+  const {x: sx, y: sy} = canvasXY(e);
+  if (isPan) {
+    pan.x = panOrig.x + (sx - panStart.x);
+    pan.y = panOrig.y + (sy - panStart.y);
+    render(); return;
+  }
+  if (mode === 'connect' && connFrom) {
+    drag = {x: sx, y: sy};
+    render(); return;
+  }
+  if (drag && drag.id !== undefined) {
+    const w = s2w(sx, sy);
+    drag.x = w.x - dragOff.x;
+    drag.y = w.y - dragOff.y;
+    render();
+  }
+});
+
+window.addEventListener('mouseup', e => {
+  if (isPan) { isPan = false; wrap.style.cursor = mode === 'connect' ? 'crosshair' : 'default'; }
+  if (drag && drag.id !== undefined) { save(); }
+  if (mode !== 'connect') drag = null;
+});
+
+cvs.addEventListener('dblclick', e => {
+  const {x: sx, y: sy} = canvasXY(e);
+  const w = s2w(sx, sy);
+  const nd = nodeAt(w.x, w.y);
+  if (nd) {
+    showInlineEdit(nd);
+  } else {
+    const n = addNode(w.x, w.y, '');
+    select(n, null);
+    save(); render();
+    setTimeout(() => showInlineEdit(n), 50);
+  }
+});
+
+cvs.addEventListener('wheel', e => {
+  e.preventDefault();
+  const {x: sx, y: sy} = canvasXY(e);
+  const oldZ = zoom;
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  zoom = Math.max(0.1, Math.min(5, zoom * delta));
+  pan.x = sx - (sx - pan.x) * (zoom / oldZ);
+  pan.y = sy - (sy - pan.y) * (zoom / oldZ);
+  document.getElementById('zoom-ind').textContent = Math.round(zoom * 100) + '%';
+  render();
+}, { passive: false });
+
+cvs.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const {x: sx, y: sy} = canvasXY(e);
+  const w = s2w(sx, sy);
+  const nd = nodeAt(w.x, w.y);
+  const ed = edgeAt(w.x, w.y);
+  showCtxMenu(sx, sy, nd, ed, w);
+});
+
+function showCtxMenu(sx, sy, nd, ed, w) {
+  const menu = ctxMenu;
+  menu.innerHTML = '';
+  const add = (txt, fn) => {
+    const d = document.createElement('div');
+    d.className = 'ctx-item';
+    d.textContent = txt;
+    d.onclick = () => { fn(); hideCtxMenu(); };
+    menu.appendChild(d);
+  };
+  if (nd) {
+    add('编辑', () => showInlineEdit(nd));
+    add('删除节点', () => { deleteNode(nd); select(null, null); save(); render(); });
+    add('从这里连线', () => { setMode('connect'); connFrom = nd; render(); });
+  } else if (ed) {
+    add('删除连线', () => { deleteEdge(ed); select(null, null); save(); render(); });
+  } else {
+    add('在此添加节点', () => { const n = addNode(w.x, w.y, ''); select(n, null); save(); render(); setTimeout(() => showInlineEdit(n), 50); });
+  }
+  menu.style.left = sx + 'px';
+  menu.style.top = sy + 'px';
+  menu.style.display = '';
+}
+
+function hideCtxMenu() { ctxMenu.style.display = 'none'; }
+
+// --- Inline Edit ---
+function showInlineEdit(node) {
+  editingNode = node;
+  const s = w2s(node.x - node.w / 2, node.y - node.h / 2);
+  inlineEdit.style.left = s.x + 'px';
+  inlineEdit.style.top = s.y + 'px';
+  inlineEdit.style.width = node.w * zoom + 'px';
+  inlineEdit.style.height = Math.max(node.h * zoom, 60) + 'px';
+  inlineEdit.style.fontSize = Math.max(14 * zoom, 10) + 'px';
+  inlineEdit.style.display = 'block';
+  inlineEdit.value = node.text;
+  inlineEdit.focus();
+  inlineEdit.select();
+}
+
+inlineEdit.addEventListener('blur', commitInlineEdit);
+inlineEdit.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { inlineEdit.style.display = 'none'; editingNode = null; }
+});
+
+function commitInlineEdit() {
+  if (!editingNode) return;
+  editingNode.text = inlineEdit.value;
+  measure(editingNode);
+  inlineEdit.style.display = 'none';
+  if (selNode === editingNode) updatePanel();
+  editingNode = null;
+  save(); render();
+}
+
+// --- Keyboard ---
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (selNode) { deleteNode(selNode); select(null, null); save(); render(); }
+    else if (selEdge) { deleteEdge(selEdge); select(null, null); save(); render(); }
+  }
+  if (e.key === 'v' || e.key === 'V') setMode('select');
+  if (e.key === 'c' || e.key === 'C') setMode('connect');
+  if (e.key === 'Escape') { connFrom = null; select(null, null); setMode('select'); }
+});
+
+// --- Layout ---
+document.getElementById('btn-layout').onclick = autoLayout;
+function autoLayout() {
+  if (!nodes.length) return;
+  const childMap = {}, parentMap = {};
+  nodes.forEach(n => { childMap[n.id] = []; parentMap[n.id] = []; });
+  edges.forEach(e => { if (childMap[e.from]) childMap[e.from].push(e.to); if (parentMap[e.to]) parentMap[e.to].push(e.from); });
+
+  const roots = nodes.filter(n => parentMap[n.id].length === 0);
+  if (!roots.length) roots.push(nodes[0]);
+
+  const level = {};
+  const q = roots.map(r => [r.id, 0]);
+  const visited = new Set();
+  while (q.length) {
+    const [id, lv] = q.shift();
+    if (visited.has(id)) { level[id] = Math.max(level[id] || 0, lv); continue; }
+    visited.add(id);
+    level[id] = lv;
+    childMap[id].forEach(c => q.push([c, lv + 1]));
+  }
+  nodes.forEach(n => { if (!(n.id in level)) level[n.id] = 0; });
+
+  const layers = {};
+  nodes.forEach(n => { const l = level[n.id]; (layers[l] = layers[l] || []).push(n); });
+
+  const gapY = 160, gapX = 60;
+  const sortedKeys = Object.keys(layers).map(Number).sort((a, b) => a - b);
+  sortedKeys.forEach((lv, li) => {
+    const row = layers[lv];
+    let totalW = row.reduce((s, n) => s + n.w, 0) + (row.length - 1) * gapX;
+    let cx = -totalW / 2;
+    row.forEach(n => { n.x = cx + n.w / 2; n.y = li * gapY; cx += n.w + gapX; });
+  });
+
+  save(); render(); fitView();
+}
+
+// --- Fit View ---
+document.getElementById('btn-fit').onclick = fitView;
+function fitView() {
+  if (!nodes.length) { pan = {x:0,y:0}; zoom = 1; render(); return; }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  nodes.forEach(n => {
+    minX = Math.min(minX, n.x - n.w/2);
+    minY = Math.min(minY, n.y - n.h/2);
+    maxX = Math.max(maxX, n.x + n.w/2);
+    maxY = Math.max(maxY, n.y + n.h/2);
+  });
+  const pad = 60;
+  const cw = cvs.clientWidth, ch = cvs.clientHeight;
+  const bw = maxX - minX + pad * 2, bh = maxY - minY + pad * 2;
+  zoom = Math.min(cw / bw, ch / bh, 2);
+  pan.x = cw / 2 - (minX + maxX) / 2 * zoom;
+  pan.y = ch / 2 - (minY + maxY) / 2 * zoom;
+  document.getElementById('zoom-ind').textContent = Math.round(zoom * 100) + '%';
+  render();
+}
+
+// --- Export / Import ---
+document.getElementById('btn-export').onclick = () => {
+  const data = JSON.stringify({
+    version: 1,
+    nodes: nodes.map(n => ({ id: n.id, text: n.text, characters: n.chars, x: n.x, y: n.y })),
+    edges: edges.map(e => ({ id: e.id, from: e.from, to: e.to, probability: e.probability, label: e.label }))
+  }, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'story-tree.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+document.getElementById('btn-import').onclick = () => document.getElementById('file-in').click();
+document.getElementById('file-in').onchange = function() {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      loadData(data);
+      fitView();
+    } catch(err) { alert('JSON 解析失败: ' + err.message); }
+  };
+  reader.readAsText(file);
+  this.value = '';
+};
+
+function loadData(data) {
+  nodes = (data.nodes || []).map(n => ({
+    id: n.id, text: n.text || '', chars: n.characters || [], x: n.x || 0, y: n.y || 0, w: MIN_W, h: 60, _lines: null
+  }));
+  edges = (data.edges || []).map(e => ({
+    id: e.id, from: e.from, to: e.to, probability: e.probability ?? 50, label: e.label || ''
+  }));
+  nid = nodes.reduce((m, n) => Math.max(m, n.id + 1), 1);
+  eid = edges.reduce((m, e) => Math.max(m, e.id + 1), 1);
+  measureAll();
+  select(null, null);
+  save();
+}
+
+// --- Persistence ---
+const SAVE_KEY = 'story-tree-data';
+function save() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      version: 1,
+      nodes: nodes.map(n => ({ id: n.id, text: n.text, characters: n.chars, x: n.x, y: n.y })),
+      edges: edges.map(e => ({ id: e.id, from: e.from, to: e.to, probability: e.probability, label: e.label })),
+      view: { pan, zoom }
+    }));
+  } catch(e) {}
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    loadData(data);
+    if (data.view) {
+      pan = data.view.pan || {x:0,y:0};
+      zoom = data.view.zoom || 1;
+      document.getElementById('zoom-ind').textContent = Math.round(zoom * 100) + '%';
+    }
+  } catch(e) {}
+}
+
+// --- Init ---
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  const r = wrap.getBoundingClientRect();
+  cvs.width = r.width * dpr;
+  cvs.height = r.height * dpr;
+  cvs.style.width = r.width + 'px';
+  cvs.style.height = r.height + 'px';
+  render();
+}
+
+window.addEventListener('resize', resize);
+load();
+resize();
+if (!nodes.length) {
+  pan.x = cvs.clientWidth / 2;
+  pan.y = 80;
+  render();
+}
+
+// --- API Settings ---
+const CFG_KEY = 'story-tree-api-cfg';
+let apiCfg = { endpoint: '', key: '', model: 'gpt-4o' };
+try { const c = JSON.parse(localStorage.getItem(CFG_KEY)); if (c) apiCfg = { ...apiCfg, ...c }; } catch(e) {}
+
+document.getElementById('btn-settings').onclick = () => {
+  document.getElementById('cfg-endpoint').value = apiCfg.endpoint;
+  document.getElementById('cfg-key').value = apiCfg.key;
+  document.getElementById('cfg-model').value = apiCfg.model;
+  document.getElementById('modal-overlay').classList.add('show');
+};
+document.getElementById('cfg-cancel').onclick = () => document.getElementById('modal-overlay').classList.remove('show');
+document.getElementById('cfg-save').onclick = () => {
+  apiCfg.endpoint = document.getElementById('cfg-endpoint').value.trim().replace(/\/+$/, '');
+  apiCfg.key = document.getElementById('cfg-key').value.trim();
+  apiCfg.model = document.getElementById('cfg-model').value.trim() || 'gpt-4o';
+  localStorage.setItem(CFG_KEY, JSON.stringify(apiCfg));
+  document.getElementById('modal-overlay').classList.remove('show');
+};
+document.getElementById('modal-overlay').onclick = e => { if (e.target === e.currentTarget) e.currentTarget.classList.remove('show'); };
+
+// --- AI Suggest ---
+function buildTreeContext(focusNode) {
+  let ctx = '## Current Story Tree\n\n';
+  const nodeMap = {};
+  nodes.forEach(n => nodeMap[n.id] = n);
+
+  const parentMap = {};
+  nodes.forEach(n => parentMap[n.id] = []);
+  edges.forEach(e => { if (parentMap[e.to]) parentMap[e.to].push(e); });
+
+  const childMap = {};
+  nodes.forEach(n => childMap[n.id] = []);
+  edges.forEach(e => { if (childMap[e.from]) childMap[e.from].push(e); });
+
+  nodes.forEach(n => {
+    const marker = n === focusNode ? ' [CURRENT FOCUS]' : '';
+    ctx += `Node #${n.id}${marker}: "${n.text || '(空)'}"\n`;
+    if (n.chars.length) ctx += `  Characters: ${n.chars.join(', ')}\n`;
+    const incoming = parentMap[n.id];
+    if (incoming.length) {
+      incoming.forEach(e => {
+        const from = nodeMap[e.from];
+        ctx += `  <- from #${e.from} "${from ? from.text : '?'}" (${e.probability}%${e.label ? ', ' + e.label : ''})\n`;
+      });
+    }
+    const outgoing = childMap[n.id];
+    if (outgoing.length) {
+      outgoing.forEach(e => {
+        const to = nodeMap[e.to];
+        ctx += `  -> to #${e.to} "${to ? to.text : '?'}" (${e.probability}%${e.label ? ', ' + e.label : ''})\n`;
+      });
+    }
+    ctx += '\n';
+  });
+
+  return ctx;
+}
+
+document.getElementById('nd-ai').onclick = async function() {
+  if (!selNode) return;
+  if (!apiCfg.endpoint || !apiCfg.key) {
+    document.getElementById('btn-settings').click();
+    return;
+  }
+
+  const btn = this;
+  const results = document.getElementById('ai-results');
+  btn.disabled = true;
+  btn.textContent = '思考中...';
+  results.innerHTML = '<div class="ai-status">正在生成建议...</div>';
+
+  const treeCtx = buildTreeContext(selNode);
+  const prompt = `You are a story development assistant. Given the story tree below, suggest 3-5 possible story branches from the CURRENT FOCUS node.
+
+${treeCtx}
+
+For each branch, respond in this JSON format (no markdown, just the JSON array):
+[
+  {
+    "text": "short description of what happens in this branch (1-2 sentences, in Chinese)",
+    "characters": ["character names involved (in Chinese)"],
+    "probability": number 0-100,
+    "label": "short edge label in Chinese (2-4 words)"
+  }
+]
+
+Consider:
+- Story logic and character motivations
+- Dramatic tension and interesting conflicts
+- Both expected and unexpected developments
+- If nodes converge (multiple paths lead to same outcome), note that in the label
+- Probabilities should reflect narrative likelihood and should sum to roughly 100 across all branches
+- Keep descriptions concise but vivid
+- All text content must be in Chinese`;
+
+  try {
+    const resp = await fetch(apiCfg.endpoint + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiCfg.key },
+      body: JSON.stringify({
+        model: apiCfg.model,
+        messages: [
+          { role: 'system', content: 'You are a creative story development assistant. Always respond with valid JSON arrays only, no markdown fences. All text content must be in Chinese.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.9
+      })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(`API ${resp.status}: ${err.slice(0, 200)}`);
+    }
+
+    const data = await resp.json();
+    let content = data.choices[0].message.content.trim();
+    content = content.replace(/^```json?\s*/i, '').replace(/```\s*$/, '').trim();
+    const suggestions = JSON.parse(content);
+
+    results.innerHTML = '';
+    const focusId = selNode.id;
+    const focusNodeRef = selNode;
+
+    suggestions.forEach((s, i) => {
+      const card = document.createElement('div');
+      card.className = 'ai-card';
+      let html = `<div class="ai-title">${escHtml(s.text)}</div>`;
+      html += `<div class="ai-meta">${s.probability}% | ${escHtml(s.label || '')}</div>`;
+      if (s.characters && s.characters.length) {
+        html += '<div class="ai-chars">';
+        s.characters.forEach(c => {
+          html += `<span style="background:${charColor(c)}">${escHtml(c)}</span>`;
+        });
+        html += '</div>';
+      }
+      card.innerHTML = html;
+      card.onclick = () => {
+        const yOff = (focusNodeRef.h / 2 + 140) + i * 20;
+        const xSpread = (i - (suggestions.length - 1) / 2) * 220;
+        const nn = addNode(focusNodeRef.x + xSpread, focusNodeRef.y + yOff, s.text);
+        if (s.characters) s.characters.forEach(c => { if (!nn.chars.includes(c)) nn.chars.push(c); });
+        measure(nn);
+        const ne = addEdge(focusId, nn.id);
+        if (ne) { ne.probability = s.probability || 50; ne.label = s.label || ''; }
+        card.style.opacity = '0.4';
+        card.style.pointerEvents = 'none';
+        save(); render();
+      };
+      results.appendChild(card);
+    });
+
+    const applyAll = document.createElement('div');
+    applyAll.className = 'ai-card';
+    applyAll.innerHTML = '<div class="ai-title" style="text-align:center;color:#89b4fa">全部应用</div>';
+    applyAll.onclick = () => {
+      results.querySelectorAll('.ai-card').forEach(c => {
+        if (c !== applyAll && c.style.opacity !== '0.4') c.click();
+      });
+    };
+    results.appendChild(applyAll);
+
+  } catch(err) {
+    results.innerHTML = `<div class="ai-status" style="color:#f38ba8">错误: ${escHtml(err.message)}</div>`;
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'AI 生成分支';
+};
+
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>
